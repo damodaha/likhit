@@ -208,6 +208,56 @@ _STRANDED_BRACKET_PATTERN = re.compile(
     + "])"
 )
 
+# A maximal run of digits and the separators this corpus uses inside figures. The
+# DEVANAGARI DANDA doubles as the decimal mark in OAG audit tables, so it is a
+# separator here and not punctuation.
+_FIGURE_RUN_PATTERN = re.compile(r"[०-९0-9,.।]+")
+_FIGURE_DIGIT_PATTERN = re.compile(r"[०-९0-9]")
+
+
+def _money_figure_count(text: str) -> int:
+    """Count runs that are STRUCTURALLY a figure, not merely digits (VOL-67 / run 71280cb8).
+
+    A figure is a digit run carrying at least four digits, or one whose separator has a
+    digit on each side -- `६१२०।००`, `93083.32`, `५९४०००।००`. A lone numeral, or a
+    numeral loose among punctuation, is not one.
+
+    **Structure is the whole point, and a plain digit count is measurably the wrong
+    instrument here.** :func:`_map_ranking_key`'s docstring already establishes (VOL-89)
+    that a reading can gain Devanagari digits *because the map is wrong* -- converting
+    ASCII digits into Devanagari digits raises `ratio` too, which is why `ratio` sits
+    below the garble axis. A count of free-standing Devanagari numerals inherits exactly
+    that mirage: measured on `4487__…बसबरिया गाउँपालिका` (font `Spins`, 2,156 characters),
+    VOL-89's own anchor, such a count prefers `Preeti` over the `PCS NEPALI` that record
+    establishes as correct. Requiring a grouped, separator-bearing shape does not: on the
+    same span it is level, and across every anchor that docstring names it moves no span
+    that carries a decision. Grouping is evidence about the *source*, because an audit
+    table's money column is grouped in the input and a mis-keyed numeral is not.
+
+    Both digit systems count. The figure a wrong map destroys may be ASCII in the source
+    (an amounts column typed in English digits inside otherwise-legacy prose is ordinary
+    in this corpus), and a map that turns it into consonants has destroyed a figure
+    whichever script it was in.
+    """
+
+    total = 0
+    for match in _FIGURE_RUN_PATTERN.finditer(text):
+        run = match.group(0)
+        digits = len(_FIGURE_DIGIT_PATTERN.findall(run))
+        if not digits:
+            continue
+        if digits >= 4:
+            total += 1
+            continue
+        for index, char in enumerate(run):
+            if index and index < len(run) - 1 and char in ",.।":
+                if _FIGURE_DIGIT_PATTERN.match(
+                    run[index - 1]
+                ) and _FIGURE_DIGIT_PATTERN.match(run[index + 1]):
+                    total += 1
+                    break
+    return total
+
 
 def parse_page_range(spec: str, total_pages: int) -> tuple[int, int]:
     """Parse a 1-based inclusive page range to 0-based bounds."""
@@ -1993,6 +2043,9 @@ def _nepali_validity(text: str) -> dict[str, float]:
         "hits": hits,
         # Not part of `penalty`: see `_STRANDED_BRACKET_PATTERN`. Ranking only.
         "stranded": len(_STRANDED_BRACKET_PATTERN.findall(text)),
+        # Ranking only, between `stranded` and `attested`: see
+        # :func:`_map_ranking_key` and :func:`_money_figure_count`.
+        "figures": _money_figure_count(text),
         # Ranking only, and below `stranded`: see :func:`_map_ranking_key`.
         "attested": _attested_word_count(text),
     }
@@ -2009,7 +2062,7 @@ def _passes_content_legacy_gate(validity: dict[str, float]) -> bool:
 
 def _map_ranking_key(
     validity: dict[str, float],
-) -> tuple[float, float, float, float, float, float]:
+) -> tuple[float, float, float, float, float, float, float]:
     """Evidence axes for a candidate map, most decisive first, higher is better.
 
     ``hits`` and ``penalty`` are the calibrated primary axes. ``ratio`` and
@@ -2067,6 +2120,48 @@ def _map_ranking_key(
     quantity it is not a damage measure at all. See
     :data:`_STRANDED_BRACKET_PATTERN`.
 
+    **``figures`` sits between ``stranded`` and ``attested``, because every axis below
+    it is blind to a destroyed amounts column (VOL-67, run 71280cb8).** ``attested``
+    counts word-forms; ``devanagari`` counts characters; the rollup instrument these
+    decisions are screened with counts Devanagari *letters*, which is `Lo/Lm/Ll/Lu`, and
+    **a Devanagari digit is `Nd`**. So no axis here could see the one thing that
+    distinguishes the ``Preeti`` / ``FONTASY_HIMALI_TT`` pair, whose **two number rows
+    are exchanged** (:mod:`likhit.extractors.legacy_maps`): each turns the other's
+    numerals into consonants, at near-zero cost on every other axis. That comment
+    records the pair costing **24,804 correctly-decoded Devanagari digits** corpus-wide
+    the last time they were confused by *name*; ranking can make the same swap per
+    document.
+
+    ``5143__…हलेसी तुवाचुङ नगरपालिका`` (font ``LiberationSerif-Bold``, 614 characters) is
+    the live instance the axis was built from. ``hits`` ties 2-2, ``stranded`` floors 1 to
+    0, and ``attested`` **4 against 3** then carried the span to ``Preeti`` — which reads
+    its amounts column ``५१९७९९६।००`` as ``५१९७९९६।ण्ण्``, **12 money-shaped figures down
+    to 1**, while ``FONTASY_HIMALI_TT`` preserves them. One extra word-form was traded for
+    an audit table, and nothing in the key could report the trade.
+
+    ⚠️ **On THIS tree that span does not reach ``attested``, and the difference is the
+    point.** The measurement above was taken on the ``ecd0e42`` lineage, where
+    ``_RANKING_GARBLE_FORGIVENESS`` (VOL-226) levels 5143's 6-point garble margin and lets
+    the axes below the garble count decide. **This tree has no such constant** — it is
+    rooted on ``ecf857c``, which drops VOL-226 — so the unforgiven ``penalty`` axis ranks
+    above ``figures`` and settles those spans first. Whether that leaves this axis anything
+    to decide is what run ``9972c1f8`` measures; see
+    ``oag-corpus/runs/vol289-reprice-9972c1f8/``. Do not read the paragraph above as a
+    claim about this tree's behaviour on 5143.
+
+    **It sits below ``stranded``, not above, and that is what keeps VOL-226's repair.**
+    On ``3843__…Godawari finale`` (font ``Spins``, 1,340 characters) ``stranded`` decides
+    0 against a floored 3 before this axis is consulted at all — and the two candidates
+    are level on it anyway, 17 figures each. So the two documents VOL-226 moves separate:
+    5143 on figures, 3843 on stranded, neither at the other's expense.
+
+    **A plain digit count belongs to the mirage above and was refused on measurement.**
+    See :func:`_money_figure_count`: counting free-standing Devanagari numerals prefers
+    ``Preeti`` on ``4487__…बसबरिया गाउँपालिका``, VOL-89's own ratio-mirage anchor, where
+    ``PCS NEPALI`` is right. Requiring a grouped, separator-bearing figure is level
+    there, and across every anchor this docstring names it moves no span that carries a
+    decision.
+
     **``attested`` sits between ``stranded`` and ``ratio`` (VOL-185).** It counts how
     many distinct high-frequency Nepali word-forms a reading actually produces, and it
     is placed exactly where the axes stop being evidence: everything above it ties on
@@ -2105,6 +2200,10 @@ def _map_ranking_key(
         # VOL-185: a single stranded bracket is forgiven for the same reason a single
         # doublet is -- see `_RANKING_STRANDED_FORGIVENESS`.
         -max(validity["stranded"] - _RANKING_STRANDED_FORGIVENESS, 0),
+        # VOL-67 / run 71280cb8: how many money-shaped figures the reading preserves.
+        # Above `attested` because `attested` is letters-only and cannot see a destroyed
+        # amounts column -- see `_money_figure_count`.
+        validity["figures"],
         validity["attested"],
         validity["ratio"],
         validity["devanagari"],

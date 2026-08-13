@@ -26,6 +26,7 @@ from likhit.extractors.font_based import (
     _is_probably_legacy_ascii,
     _legacy_map_garble,
     _map_ranking_key,
+    _money_figure_count,
     _nepali_validity,
     _passes_content_legacy_gate,
     _reads_as_latin_words,
@@ -594,11 +595,15 @@ def _validity(
     ratio: float,
     stranded: int = 0,
     attested: int = 0,
+    figures: int = 0,
 ) -> dict[str, float]:
     """A validity dict as `_nepali_validity` would return it, for ranking tests.
 
     `attested` defaults to 0 so the tests below, which are about the axes above it,
     tie on it and reach the axis they are actually asserting about (VOL-185).
+    `figures` defaults to 0 for the same reason (VOL-67, run 71280cb8) -- and it is a
+    REQUIRED key rather than one `_map_ranking_key` reads with a default, so a
+    hand-built dict that forgets an axis fails loudly instead of silently scoring it 0.
     """
 
     return {
@@ -608,6 +613,7 @@ def _validity(
         "devanagari": devanagari,
         "ratio": ratio,
         "stranded": stranded,
+        "figures": figures,
         "attested": attested,
     }
 
@@ -900,7 +906,10 @@ def test_attested_words_decide_when_garble_and_stranding_tie() -> None:
         hits=3, penalty=0, devanagari=214, ratio=0.981651, stranded=0, attested=12
     )
     assert pcs["ratio"] > spins["ratio"], "ratio alone still favours the wrong map"
-    assert _map_ranking_key(spins)[:3] == _map_ranking_key(pcs)[:3], "tied above"
+    # `[:4]`, not `[:3]`: `figures` was inserted between `stranded` and `attested`
+    # (VOL-67, run 71280cb8), so everything ABOVE `attested` is now four axes. Slicing
+    # to 3 would still pass while no longer asserting what the comment claims.
+    assert _map_ranking_key(spins)[:4] == _map_ranking_key(pcs)[:4], "tied above"
     assert _map_ranking_key(spins) > _map_ranking_key(pcs), "attested must decide"
 
 
@@ -1058,3 +1067,130 @@ def test_consecutive_stranded_brackets_are_both_counted() -> None:
     # ordinary legal citation -- "section 35(2)" -- must not be charged
     assert count("दफा ३५(२)") == 0
     assert count("abc") == 0
+
+# --- VOL-67 / run 71280cb8: the numeric axis -------------------------------------
+#
+# `Preeti` and `FONTASY_HIMALI_TT` have their two number rows EXCHANGED
+# (`legacy_maps.py`), so each turns the other's numerals into consonants at near-zero
+# cost on every other ranking axis: `attested` counts word-forms, `devanagari` counts
+# characters and a Devanagari digit is as Devanagari as a consonant, and the rollup
+# instrument these decisions get screened with counts LETTERS (`Lo/Lm/Ll/Lu`) where a
+# Devanagari digit is `Nd`. `figures` is the axis that can see it.
+
+
+def test_a_money_figure_needs_structure_not_just_digits() -> None:
+    # Four digits, or a separator with a digit on each side. The DEVANAGARI DANDA is a
+    # decimal mark in this corpus, so `६१२०।००` is one figure, not two runs.
+    assert _money_figure_count("६१२०।००") == 1
+    assert _money_figure_count("93083.32") == 1
+    assert _money_figure_count("५१९७९९६।००") == 1
+    # A lone numeral is not a figure, however Devanagari it is.
+    assert _money_figure_count("९") == 0
+    assert _money_figure_count("क ९ ख") == 0
+    # ...and neither are numerals loose among punctuation, which is what the WRONG map
+    # leaves behind on an amounts column.
+    assert _money_figure_count("।।     ण्  ण्, , ,    ।") == 0
+
+
+def test_the_numeric_axis_saves_the_amounts_column_attested_would_trade_away() -> None:
+    # `5143__...हलेसी तुवाचुङ नगरपालिका`, font `LiberationSerif-Bold`, 614 characters.
+    # Measured both arms in run 71280cb8: `hits` ties 2-2, `stranded` floors 1 to 0 --
+    # and then `attested` 4 against 3 carried the span to `Preeti`, which reads
+    # `५१९७९९६।००` as `५१९७९९६।ण्ण्` and takes 12 money figures down to 1.
+    # This case is layout-only and holds on any base: it hands the ranking key a
+    # hand-built `penalty=0` on both candidates, so no garble margin exists to forgive
+    # and `_RANKING_GARBLE_FORGIVENESS` -- absent on this `ecf857c` root -- is not
+    # reachable from here. Run 71280cb8's narrative cited it; the arithmetic never did.
+    himali = _validity(
+        hits=2,
+        penalty=0,
+        devanagari=256,
+        ratio=0.89,
+        stranded=0,
+        attested=3,
+        figures=12,
+    )
+    preeti = _validity(
+        hits=2, penalty=6, devanagari=346, ratio=0.91, stranded=1, attested=4, figures=1
+    )
+    # Everything above the new axis really is level, so the axis is what decides.
+    assert _map_ranking_key(himali)[:3] == _map_ranking_key(preeti)[:3], "tied above"
+    assert preeti["attested"] > himali["attested"], (
+        "attested alone favours the wrong map"
+    )
+    assert _map_ranking_key(himali) > _map_ranking_key(preeti), "figures must decide"
+
+
+def test_the_numeric_axis_does_not_disturb_the_stranded_calibration() -> None:
+    # `3843__...Godawari finale`, font `Spins`, 1,340 characters -- VOL-226's repair.
+    # `stranded` decides it (0 against a floored 3) ABOVE the new axis, and the two
+    # candidates are level on the new axis anyway (17 figures each), so the repair is
+    # untouched for two independent reasons. Measured in run 71280cb8.
+    spins = _validity(
+        hits=3,
+        penalty=6,
+        devanagari=843,
+        ratio=0.98,
+        stranded=0,
+        attested=44,
+        figures=17,
+    )
+    preeti = _validity(
+        hits=3,
+        penalty=0,
+        devanagari=826,
+        ratio=0.98,
+        stranded=4,
+        attested=40,
+        figures=17,
+    )
+    assert spins["figures"] == preeti["figures"], "level on the new axis"
+    assert _map_ranking_key(spins) > _map_ranking_key(preeti), "stranded still decides"
+    # And it must not be able to overrule `stranded`: give the wrong map every figure.
+    preeti_all_figures = dict(preeti, figures=999)
+    assert _map_ranking_key(spins) > _map_ranking_key(preeti_all_figures), (
+        "figures must sit BELOW stranded"
+    )
+
+
+def test_the_numeric_axis_does_not_outrank_the_garble_axis() -> None:
+    # Same containment as `attested` and `ratio`: on `4487__...बसबरिया गाउँपालिका` the
+    # wrong map carries 48 penalty points, and no count of figures may buy that back.
+    garbled = _validity(
+        hits=2,
+        penalty=48,
+        devanagari=655,
+        ratio=0.688,
+        stranded=0,
+        attested=2,
+        figures=99,
+    )
+    clean = _validity(
+        hits=2,
+        penalty=0,
+        devanagari=658,
+        ratio=0.679,
+        stranded=0,
+        attested=2,
+        figures=0,
+    )
+    assert _map_ranking_key(clean) > _map_ranking_key(garbled), "penalty outranks it"
+
+
+def test_a_bare_digit_count_would_pick_the_wrong_map_on_the_ratio_mirage_anchor() -> (
+    None
+):
+    # Why the axis requires STRUCTURE. `4487__...बसबरिया गाउँपालिका`, font `Spins`,
+    # 2,156 characters -- VOL-89's own ratio-mirage anchor, where `PCS NEPALI` is the
+    # right map. Measured in run 71280cb8: counting free-standing Devanagari numerals
+    # scores `Preeti` ABOVE `PCS NEPALI` there (that map gains loose numerals precisely
+    # because it is wrong), while the money-figure count is level -- 0 against 0.
+    # This test fails if the axis is ever loosened back to a plain digit count.
+    right_map_text = "क) वित्तीय ९ विवरण"  # loose numeral, no figure
+    wrong_map_text = "ख) ९ ८ ७ ६ राजस्व"  # more loose numerals, still no figure
+    assert (
+        _money_figure_count(right_map_text) == _money_figure_count(wrong_map_text) == 0
+    )
+    # The structural definition cannot be gamed by numeral volume alone.
+    assert _money_figure_count("९ ८ ७ ६ ५ ४ ३ २ १") == 0
+    assert _money_figure_count("९८७६।५४") == 1
