@@ -297,11 +297,15 @@ def test_11129_run_decodes_once_the_vocabulary_is_purified() -> None:
 
     spans = [_span("Spins", VOL212_RUN)]
     impure = frozenset(VOL212_IMPURE_VOCABULARY)
-    assert _reads_as_latin_text(VOL212_RUN, SPINS(VOL212_RUN)) is False, "axis 1 declines"
+    assert _reads_as_latin_text(VOL212_RUN, SPINS(VOL212_RUN)) is False, (
+        "axis 1 declines"
+    )
     assert _content_legacy_veto_flags(spans, SPINS_CHOICE, impure) == [True], "fire 26"
 
     purified = frozenset(
-        token for token in impure if not _decodes_as_legacy_devanagari(token, SPINS_CHOICE)
+        token
+        for token in impure
+        if not _decodes_as_legacy_devanagari(token, SPINS_CHOICE)
     )
     assert purified == frozenset(), "nothing in this document attests English"
     assert _content_legacy_veto_flags(spans, SPINS_CHOICE, purified) == [False]
@@ -345,7 +349,9 @@ def test_each_of_the_six_conditions_rejects_its_own_shape() -> None:
     assert not _is_wellformed_devanagari("त्ी"), "C5 vowel sign after halant"
     assert not _is_wellformed_devanagari("ध्ब्ीी"), "C6 two vowel signs in a row"
     assert not _is_wellformed_devanagari(""), "empty is not a word"
-    assert not _is_wellformed_devanagari("MIS"), "an untouched ASCII token is not Nepali"
+    assert not _is_wellformed_devanagari("MIS"), (
+        "an untouched ASCII token is not Nepali"
+    )
 
 
 def test_purity_is_ANY_candidate_map_not_ALL() -> None:
