@@ -61,7 +61,17 @@ _CID_MARK_BASE = 0xF0000
 _MAX_MARKABLE_CID = 0xFFFD
 _MARKED_CID_PATTERN = re.compile(r"[\U000F0000-\U000FFFFD]")
 _PREFIX_IKAR_PATTERN = re.compile(r"(?:(?<=^)|(?<=[\s(]))ि(?=[\u0915-\u0939])")
-_INVALID_IKAR_PATTERN = re.compile(r"ि(?=[ािीुूृॄेैोौंःँ])")
+# The lookahead is the eleven vowel *matras* only. It deliberately excludes the three
+# nasal/visarga marks that used to be in this class -- anusvara U+0902, visarga
+# U+0903, candrabindu U+0901 -- because an ikar followed by one of those is
+# ordinary Nepali, not a mis-map: on the 6,223 published v11 transcripts those
+# three account for 95,153 matches, every sampled one of them correct
+# (सिंह, सिंचाई, दिँदा, हिंसा, लिंक, निःशुल्क, मितिः), against 101,628 matches for
+# the matras, every sampled one of them garble (सिालन, आथििक, वििरण). Two vowel
+# signs in a row cannot be typed; a vowel sign then a nasal mark is spelling.
+# VOL-131: this false positive is what charged the correct `Spins` decode of
+# `2366__…Dolakha Tamakoshi` 12 points for the word नदेखिंदा, losing it the span.
+_INVALID_IKAR_PATTERN = re.compile(r"ि(?=[ािीुूृॄेैोौ])")
 _HALANT_IKAR_PATTERN = re.compile(r"्ि")
 _DUPLICATE_CONSONANT_PATTERN = re.compile(r"([क-ह])\1")
 _SUSPICIOUS_ARTIFACT_PATTERN = re.compile(
@@ -331,6 +341,11 @@ def _text_quality_penalty(text: str) -> int:
         + len(_INVALID_IKAR_PATTERN.findall(text)) * 6
         + len(_HALANT_IKAR_PATTERN.findall(text)) * 4
         + len(_DUPLICATE_CONSONANT_PATTERN.findall(text)) * 3
+        # NOTE: the doublet term above is the BARE pattern. A13 (#69) replaces it with the
+        # narrowed `_duplicate_consonant_count`, and that is where the narrowing belongs --
+        # A14's own diff carried the same edit only because its rollup parent had it. The
+        # two must not both apply it; whichever lands second gets a no-op here.
+
         + len(_SUSPICIOUS_ARTIFACT_PATTERN.findall(text)) * 8
     )
 
