@@ -2062,8 +2062,18 @@ def _passes_content_legacy_gate(validity: dict[str, float]) -> bool:
 
 def _map_ranking_key(
     validity: dict[str, float],
-) -> tuple[float, float, float, float, float, float, float]:
+    *,
+    mixed_eligible: float | None = None,
+) -> tuple[float, ...]:
     """Evidence axes for a candidate map, most decisive first, higher is better.
+
+    **This is the only place the axis order is written down.** ``mixed_eligible``
+    splices VOL-218's eligibility indicator in below ``figures`` and above
+    ``attested`` -- board decision `a5f18dcb`, answered ``both_fig_first`` -- and
+    ``None`` (the default) returns the shipped tuple unchanged, so every existing
+    caller is unaffected. It is a parameter rather than a second key function because
+    a *copy* of this tuple silently lost a term once already; see
+    :func:`_map_ranking_key_margin_gated`.
 
     ``hits`` and ``penalty`` are the calibrated primary axes. ``ratio`` and
     ``devanagari`` are tie-breaks only: a map that fits the face maps every
@@ -2204,6 +2214,13 @@ def _map_ranking_key(
         # Above `attested` because `attested` is letters-only and cannot see a destroyed
         # amounts column -- see `_money_figure_count`.
         validity["figures"],
+        # VOL-218's ELIGIBLE indicator, present only when a caller gates on a margin.
+        # Immediately BELOW `figures`: card `a5f18dcb` answered `both_fig_first`, and
+        # this position is what makes the landed code the arm that was priced
+        # (`D_fig_first` in `oag-corpus/runs/vol289-reprice-9972c1f8/`). A constant
+        # extra element cannot reorder candidates, which is why the silent case is
+        # identical to shipped BY CONSTRUCTION rather than by a claim.
+        *(() if mixed_eligible is None else (mixed_eligible,)),
         validity["attested"],
         validity["ratio"],
         validity["devanagari"],
@@ -2326,24 +2343,36 @@ def _mixed_margin_setting() -> int | None:
 
 
 def _map_ranking_key_margin_gated(threshold: float):
-    """:func:`_map_ranking_key` plus an ELIGIBLE indicator at P2's position.
+    """:func:`_map_ranking_key` plus an ELIGIBLE indicator, from the SAME tuple.
 
     ``threshold`` is ``mixed(shipped winner) - margin``. A candidate is eligible iff
     its own mixed count is at or below it, so the gate can only ever promote a
     candidate that beats the shipped winner by more than the margin.
+
+    **This function used to re-write the ranking tuple by hand, and that cost the
+    corpus VOL-289's whole figures axis.** Measured in run `9c7a9a3b`
+    (`oag-corpus/runs/vol218/joint-probe-9c7a9a3b.json`): the copy was written when
+    the shipped key had six elements, `46fd302` then added ``figures`` at index 3, and
+    the copy put ``ELIGIBLE`` at that same index -- so pass 2 *overwrote* the figures
+    slot. Since :func:`choose_legacy_map_detailed` returns pass 2 on every deciding
+    unit, enabling the gate deleted the figures axis corpus-wide: on the joint tip it
+    reverted all six of that term's repairs, **3719 included** -- the document this
+    gate exists to repair -- and moved 3 documents where the priced arm moves 8.
+
+    Two invariants that were previously claims and are now structural, because there
+    is one tuple and this function no longer knows its contents:
+
+    * the silent case (no candidate eligible) orders exactly as shipped -- a constant
+      element cannot reorder candidates;
+    * a term added to :func:`_map_ranking_key` cannot go missing here.
+
+    Both are pinned by tests that compare the two keys' *relationship*, not their
+    contents, so they keep biting as the axis list grows.
     """
 
     def key(validity: dict[str, float]) -> tuple[float, ...]:
         eligible = 1.0 if validity.get("mixed", 0.0) <= threshold else 0.0
-        return (
-            validity["hits"],
-            -validity["penalty"],
-            -max(validity["stranded"] - _RANKING_STRANDED_FORGIVENESS, 0),
-            eligible,
-            validity["attested"],
-            validity["ratio"],
-            validity["devanagari"],
-        )
+        return _map_ranking_key(validity, mixed_eligible=eligible)
 
     return key
 
