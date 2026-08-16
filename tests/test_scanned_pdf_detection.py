@@ -1068,6 +1068,7 @@ def test_consecutive_stranded_brackets_are_both_counted() -> None:
     assert count("दफा ३५(२)") == 0
     assert count("abc") == 0
 
+
 # --- VOL-67 / run 71280cb8: the numeric axis -------------------------------------
 #
 # `Preeti` and `FONTASY_HIMALI_TT` have their two number rows EXCHANGED
