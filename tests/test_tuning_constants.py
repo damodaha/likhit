@@ -128,6 +128,31 @@ _PINNED: dict[tuple[str, str], tuple[float, str]] = {
         "beside. Naming it is the same move as the converter's candidate-score weights -- "
         "an inline weight is invisible to this registry",
     ),
+    # -- ranking forgiveness ---------------------------------------------------- #
+    #
+    # Both terms forgive ONE occurrence before the tell counts, because each fires at a
+    # low rate on correct text. Registering them here also closes a real weakness: the
+    # suite pinned the stranded one only to an INTERVAL, admitting both 1 and 2, so a
+    # move to 2 would have shipped silently. Its doublet twin was pinned exactly. A
+    # registry entry pins exactly, which is the point of this file.
+    (
+        "likhit/extractors/font_based.py",
+        "_RANKING_DOUBLET_FORGIVENESS",
+    ): (
+        1,
+        "one unexplained doublet is inside the residual false-positive rate the "
+        "morphology narrowing leaves behind; two is evidence",
+    ),
+    (
+        "likhit/extractors/font_based.py",
+        "_RANKING_STRANDED_FORGIVENESS",
+    ): (
+        1,
+        "one stranded bracket can be an ordinary parenthetical. NOTE the tell now counts "
+        "overlapping occurrences, so two adjacent Nepali list labels score 2 rather than "
+        "1 -- which is exactly the case this forgiveness must not swallow, and the reason "
+        "the count was fixed before this value was pinned",
+    ),
     # -- the Latin veto on the content-legacy remap ---------------------------- #
     #
     # These four gate whether a span that merely SHARES a legacy face is left as English
