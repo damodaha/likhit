@@ -43,10 +43,12 @@ _PATHREF = re.compile(r"`((?:src|tests|docs|tools|site|samples)/[\w./-]+?)(?::\d
 # Paths a doc in this tree names that a SIBLING change adds. Each entry must say which,
 # and each is an error once the file exists -- see the expiry test below. This is how the
 # merge order is recorded in the tree instead of in a pull-request description.
-_PENDING: dict[str, str] = {
-    "tests/test_pymupdf_flag_words.py": "added by the get_text flag-word guard PR",
-    "tests/test_extractor_renderer_seam.py": "added by the extractor->renderer seam PR",
-}
+# Empty, and it got there by working. Both entries -- `tests/test_pymupdf_flag_words.py`
+# and `tests/test_extractor_renderer_seam.py` -- were declared here while their sibling
+# changes were in review. When those landed,
+# `test_no_pending_reference_has_arrived_yet` went red and named them, and the entries
+# were deleted. Both references are now guarded like any other.
+_PENDING: dict[str, str] = {}
 
 _DOCS = sorted(
     path
