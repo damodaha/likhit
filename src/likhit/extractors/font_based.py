@@ -307,6 +307,8 @@ def unmark_cids(text: str) -> str:
         else char
         for char in text
     )
+
+
 # Latin subsets whose glyph ids sit a uniform offset from ASCII decode losslessly
 # once that offset is known, so text a missing /ToUnicode would otherwise throw
 # away can be read back exactly. Recovery is deliberately hemmed in on four
